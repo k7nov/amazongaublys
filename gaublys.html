@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Amazon Globalus Veiklos Tinklas</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Urbanist', sans-serif; cursor: default; }
+        canvas { display: block; outline: none; }
+        
+        #info-panel {
+            position: absolute; top: 20px; left: 20px; background: rgba(0, 0, 0, 0.95);
+            color: white; padding: 20px; border-radius: 12px; border-left: 6px solid #FF9900;
+            display: none; pointer-events: none; max-width: 320px; z-index: 999;
+            box-shadow: 0 10px 30px rgba(255, 153, 0, 0.2);
+            transition: opacity 0.3s ease;
+        }
+        #info-title { font-size: 22px; font-weight: bold; color: #FF9900; margin-bottom: 10px; }
+        #info-desc { font-size: 16px; line-height: 1.6; color: #eee; }
+        
+        #sidebar {
+            position: absolute; top: 20px; right: 20px;
+            display: flex; flex-direction: column; gap: 10px; z-index: 1000;
+        }
+        .city-btn {
+            background: rgba(0, 0, 0, 0.8); color: white; border: 1px solid #FF9900;
+            padding: 12px 20px; border-radius: 8px; cursor: pointer;
+            font-family: inherit; font-size: 14px; font-weight: bold; text-align: left;
+            transition: all 0.3s; width: 160px;
+        }
+        .city-btn:hover { background: #FF9900; color: black; transform: translateX(-5px); }
+
+        #controls-bar {
+            position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+            z-index: 1000;
+        }
+        #reset-button {
+            display: none; background: #FF9900; color: black; border: none; padding: 12px 24px;
+            border-radius: 30px; font-weight: bold; cursor: pointer;
+            font-family: inherit; transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255,153,0,0.4);
+        }
+        #reset-button:hover { background: #ffb84d; transform: scale(1.05); }
+
+        #instruction {
+            position: absolute; bottom: 30px; width: 100%; text-align: center;
+            color: rgba(255,255,255,0.4); font-size: 16px; pointer-events: none; z-index: 999;
+            text-transform: uppercase; letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info-panel">
+        <div id="info-title"></div>
+        <div id="info-desc"></div>
+    </div>
+    
+    <div id="sidebar"></div>
+    
+    <div id="controls-bar">
+        <button id="reset-button">Atstatyti vaizdą</button>
+    </div>
+    
+    <div id="instruction">Sukiokite gaublį • Paspauskite tašką arba naudokite meniu</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.6); 
+        scene.add(ambientLight);
+        const staticLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        staticLight.position.set(5, 10, 7);
+        scene.add(staticLight);
+
+        const globeGroup = new THREE.Group();
+        scene.add(globeGroup);
+
+        // zvaigzdes
+        function createStars() {
+            const starGeo = new THREE.BufferGeometry();
+            const starCoords = [];
+            for (let i = 0; i < 4000; i++) {
+                starCoords.push((Math.random() - 0.5) * 1200, (Math.random() - 0.5) * 1200, (Math.random() - 0.5) * 1200);
+            }
+            starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starCoords, 3));
+            const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.4, transparent: true, opacity: 0.6 });
+            scene.add(new THREE.Points(starGeo, starMat));
+        }
+        createStars();
+
+        const loader = new THREE.TextureLoader();
+        const texture = loader.load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg', function(tex) {
+            tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        });
+        
+        const globe = new THREE.Mesh(
+            new THREE.SphereGeometry(5, 64, 64),
+            new THREE.MeshPhongMaterial({ map: texture, color: 0xbbbbbb, shininess: 5 })
+        );
+        globeGroup.add(globe);
+
+        const halo = new THREE.Mesh(
+            new THREE.SphereGeometry(5.18, 64, 64),
+            new THREE.ShaderMaterial({
+                vertexShader: `varying vec3 vNormal; void main() { vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                fragmentShader: `varying vec3 vNormal; void main() { float intensity = pow(0.65 - dot(vNormal, vec3(0, 0, 1.0)), 4.0); gl_FragColor = vec4(0.4, 0.7, 1.0, 1.0) * intensity; }`,
+                blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent: true
+            })
+        );
+        scene.add(halo);
+
+        // logo
+        const logoTexture = loader.load('https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg');
+        const logoMaterial = new THREE.SpriteMaterial({ map: logoTexture, transparent: true, opacity: 0.8 });
+        const logoSprite = new THREE.Sprite(logoMaterial);
+        logoSprite.scale.set(3, 0.9, 1);
+        logoSprite.position.set(-1.5, 6.5, 0);
+        globeGroup.add(logoSprite);
+
+        const locations = [
+            { lat: 47.6, lng: -122.3, title: "Sietlas, JAV", shortName: "Sietlas", desc: "Tai pagrindinė „Amazon“ būstinė, kurioje viskas prasidėjo. Čia stovi unikalūs stikliniai rutuliai „The Spheres“, kurių viduje auga tikras tropinis miškas darbuotojams.", isHub: true },
+            { lat: 49.6, lng: 6.1, title: "Liuksemburgas", shortName: "Liuksemburgas", desc: "Svarbiausias biuras Europoje, atsakingas už visos žemyno rinkos priežiūrą. Ši vieta pasirinkta dėl puikios geografinės padėties, leidžiančios lengvai pasiekti visas ES šalis." },
+            { lat: 17.4, lng: 78.4, title: "Haidarabadas, Indija", shortName: "Haidarabadas", desc: "Didžiausias bendrovės pastatas visame pasaulyje, talpinantis tūkstančius specialistų. Tai svarbus technologijų centras, kuriame kuriamos naujos programėlės ir sistemos." },
+            { lat: -33.8, lng: 151.2, title: "Sidnėjus, Australija", shortName: "Sidnėjus", desc: "Pagrindinis taškas Okeanijos regione, užtikrinantis greitą prekių pristatymą ir debesijos paslaugas. Čia valdomi didžiausi duomenų srautai visame pietiniame pusrutulyje." },
+            { lat: 35.6, lng: 139.6, title: "Tokijas, Japonija", shortName: "Tokijas", desc: "Vienas moderniausių biurų Azijoje, kuriame kuriami robotizuoti sprendimai sandėliams. Japonijoje „Amazon“ derina senąsias tradicijas su pačiomis naujausiomis technologijomis." },
+            { lat: -23.5, lng: -46.6, title: "San Paulas, Brazilija", shortName: "San Paulas", desc: "Didžiausias logistikos mazgas Pietų Amerikoje, jungiantis milijonus pirkėjų. Šis centras padeda pasiekti net ir atokiausias žemyno vietas per rekordiškai trumpą laiką." }
+        ];
+
+        let seattleLoc = null;
+        const packets = [];
+
+        function getPosition(lat, lng, radius) {
+            const phi = (90 - lat) * (Math.PI / 180), theta = (lng + 180) * (Math.PI / 180);
+            return new THREE.Vector3(-(radius * Math.sin(phi) * Math.cos(theta)), radius * Math.cos(phi), radius * Math.sin(phi) * Math.sin(theta));
+        }
+
+        locations.forEach(loc => {
+            loc.pos3D = getPosition(loc.lat, loc.lng, 5.08);
+            loc.mesh = new THREE.Mesh(new THREE.SphereGeometry(0.18, 20, 20), new THREE.MeshBasicMaterial({ color: 0xFF9900 }));
+            loc.mesh.position.copy(loc.pos3D);
+            globeGroup.add(loc.mesh);
+            if (loc.isHub) seattleLoc = loc;
+        });
+
+        locations.forEach(loc => {
+            if (loc === seattleLoc) return;
+            const start = seattleLoc.pos3D.clone().normalize();
+            const end = loc.pos3D.clone().normalize();
+            const axis = new THREE.Vector3().crossVectors(start, end).normalize();
+            const angle = start.angleTo(end);
+
+            const points = [];
+            for (let i = 0; i <= 50; i++) {
+                const t = i / 50;
+                const p = start.clone().applyAxisAngle(axis, t * angle);
+                const height = 5.08 + Math.sin(t * Math.PI) * (angle * 0.35); 
+                p.multiplyScalar(height);
+                points.push(p);
+            }
+            const curve = new THREE.CatmullRomCurve3(points);
+            globeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 0xFF9900, transparent: true, opacity: 0.4 })));
+
+            const packet = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), new THREE.MeshBasicMaterial({ color: 0xFF9900 }));
+            packets.push({ mesh: packet, curve: curve, t: Math.random() });
+            globeGroup.add(packet);
+        });
+
+        // sprite
+        function createRedPin() {
+            const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(64, 48, 32, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(32, 48); ctx.lineTo(64, 120); ctx.lineTo(96, 48); ctx.fill();
+            ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(64, 48, 14, 0, Math.PI * 2); ctx.fill();
+            const spriteMat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, opacity: 0, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.center.set(0.5, 0); sprite.scale.set(0.15, 0.15, 1); sprite.visible = false;
+            return sprite;
+        }
+        const redPin = createRedPin();
+        globeGroup.add(redPin);
+
+        camera.position.set(0, 5, 15);
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; controls.minDistance = 5.2; controls.maxDistance = 40;
+
+        const infoPanel = document.getElementById('info-panel');
+        const infoTitle = document.getElementById('info-title');
+        const infoDesc = document.getElementById('info-desc');
+        const resetButton = document.getElementById('reset-button');
+        const sidebar = document.getElementById('sidebar');
+
+        locations.forEach(loc => {
+            const btn = document.createElement('button'); btn.className = 'city-btn'; btn.innerText = loc.shortName;
+            btn.onclick = () => zoomToLocation(loc); sidebar.appendChild(btn);
+        });
+
+        let activeLocation = null, isZoomed = false, zoomedLocation = null;
+
+        function checkProximity(clientX, clientY, isClick = false) {
+            if (isZoomed) return; 
+            let closestLoc = null, minDist = isClick ? 30 : 20; 
+            const camWorldPos = new THREE.Vector3(); camera.getWorldPosition(camWorldPos);
+
+            locations.forEach(loc => {
+                if (!loc.mesh.visible) return; 
+                const worldPos = new THREE.Vector3(); loc.mesh.getWorldPosition(worldPos);
+                const distToPoint = camWorldPos.distanceTo(worldPos);
+                const distToCenter = camWorldPos.distanceTo(new THREE.Vector3(0,0,0));
+                if (distToPoint > distToCenter) return; 
+
+                const pos = worldPos.project(camera);
+                const screenX = (pos.x * 0.5 + 0.5) * window.innerWidth, screenY = (pos.y * -0.5 + 0.5) * window.innerHeight;
+                const dist = Math.sqrt(Math.pow(screenX - clientX, 2) + Math.pow(screenY - clientY, 2));
+                if (dist < minDist) { minDist = dist; closestLoc = loc; }
+            });
+
+            if (isClick && closestLoc) { zoomToLocation(closestLoc); return; }
+            if (activeLocation && activeLocation !== closestLoc) { activeLocation.mesh.material.color.setHex(0xFF9900); activeLocation.mesh.scale.set(1, 1, 1); }
+            if (closestLoc) { closestLoc.mesh.material.color.setHex(0xFFFFFF); closestLoc.mesh.scale.set(1.5, 1.5, 1.5); infoTitle.innerText = closestLoc.title; infoDesc.innerText = closestLoc.desc; infoPanel.style.display = 'block'; document.body.style.cursor = 'pointer'; activeLocation = closestLoc; }
+            else { infoPanel.style.display = 'none'; document.body.style.cursor = 'default'; activeLocation = null; }
+        }
+
+        function zoomToLocation(loc) {
+            if (zoomedLocation) { zoomedLocation.mesh.visible = true; zoomedLocation.mesh.material.color.setHex(0xFF9900); zoomedLocation.mesh.scale.set(1, 1, 1); }
+            isZoomed = true; zoomedLocation = loc; resetButton.style.display = 'block';
+            infoTitle.innerText = loc.title; infoDesc.innerText = loc.desc; infoPanel.style.display = 'block';
+            loc.mesh.visible = false; activeLocation = null;
+            
+            const currentPosWorld = new THREE.Vector3(); loc.mesh.getWorldPosition(currentPosWorld);
+            const camPos = currentPosWorld.clone().normalize().multiplyScalar(5.8);
+
+            gsap.to(camera.position, { x: camPos.x, y: camPos.y, z: camPos.z, duration: 1.5, ease: "power2.inOut" });
+            gsap.to(controls.target, { x: 0, y: 0, z: 0, duration: 1.5, onUpdate: () => controls.update() });
+
+            // smeigtukas
+            const pinPos = loc.pos3D.clone().multiplyScalar(1.005);
+            redPin.position.copy(pinPos); 
+            redPin.visible = true; redPin.material.opacity = 0;
+            gsap.to(redPin.material, { opacity: 1, duration: 0.5, delay: 0.8 });
+            gsap.fromTo(redPin.position, { x: pinPos.x * 1.15, y: pinPos.y * 1.15, z: pinPos.z * 1.15 }, { x: pinPos.x, y: pinPos.y, z: pinPos.z, duration: 1, delay: 0.8, ease: "bounce.out" });
+        }
+
+        resetButton.addEventListener('click', () => {
+            isZoomed = false; resetButton.style.display = 'none'; infoPanel.style.display = 'none';
+            if (zoomedLocation) { zoomedLocation.mesh.visible = true; zoomedLocation.mesh.material.color.setHex(0xFF9900); zoomedLocation.mesh.scale.set(1, 1, 1); zoomedLocation = null; }
+            activeLocation = null;
+            gsap.to(redPin.material, { opacity: 0, duration: 0.3, onComplete: () => redPin.visible = false });
+            const pullBackPos = camera.position.clone().normalize().multiplyScalar(15);
+            gsap.to(camera.position, { x: pullBackPos.x, y: pullBackPos.y, z: pullBackPos.z, duration: 1.5, ease: "power2.inOut" });
+            gsap.to(controls.target, { x: 0, y: 0, z: 0, duration: 1.5 });
+        });
+
+        window.addEventListener('pointermove', (e) => checkProximity(e.clientX, e.clientY));
+        window.addEventListener('pointerdown', (e) => { if (e.target.tagName !== 'BUTTON') checkProximity(e.clientX, e.clientY, true); });
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!isZoomed && !activeLocation) { globeGroup.rotation.y += 0.001; }
+            packets.forEach(p => { 
+                p.t += 0.0015; if (p.t > 1) p.t = 0; 
+                p.mesh.position.copy(p.curve.getPoint(p.t)); 
+                const flicker = (Math.sin(Date.now() * 0.01) + 1) / 2;
+                p.mesh.material.color.lerpColors(new THREE.Color(0xFF9900), new THREE.Color(0xFFFF00), flicker);
+            });
+            if (seattleLoc && seattleLoc.mesh.visible && !isZoomed) {
+                const s = 1 + Math.sin(Date.now() * 0.003) * 0.3; seattleLoc.mesh.scale.set(s, s, s);
+            }
+            controls.update(); renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
